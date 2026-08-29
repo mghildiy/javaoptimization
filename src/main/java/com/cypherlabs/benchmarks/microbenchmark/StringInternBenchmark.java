@@ -1,3 +1,4 @@
+/*
 package com.cypherlabs.benchmarks.microbenchmark;
 
 import org.openjdk.jmh.annotations.*;
@@ -47,3 +48,4 @@ public class StringInternBenchmark {
         }
     }
 }
+*/

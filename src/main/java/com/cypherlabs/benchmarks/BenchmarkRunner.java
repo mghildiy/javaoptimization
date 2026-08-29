@@ -1,3 +1,4 @@
+/*
 package com.cypherlabs.benchmarks;
 
 import org.openjdk.jmh.runner.Runner;
@@ -17,3 +18,4 @@ public class BenchmarkRunner {
         new Runner(opt).run();
     }
 }
+*/
