@@ -1,2 +1,3 @@
-export JAVA_HOME=/Users/mghildiy/.sdkman/candidates/java/24-open
+export JAVA_HOME=$(/usr/libexec/java_home -v 25)
 export PATH=$JAVA_HOME/bin:$PATH
+
