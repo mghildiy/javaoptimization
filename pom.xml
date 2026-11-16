@@ -37,6 +37,23 @@
             <version>1.37</version>
             <scope>provided</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-variant</artifactId>
+            <version>1.16.0</version>  <!-- check the latest on Maven Central -->
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-hadoop</artifactId>
+            <version>1.15.2</version> <!-- any recent version should work -->
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-client</artifactId>
+            <version>3.4.1</version>
+        </dependency>
     </dependencies>
 
     <build>
