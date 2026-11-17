@@ -242,3 +242,70 @@ Two AtomicLongs are each atomic, but a transfer using both is not atomic as a wh
 Use a lock covering both.
 
 ## Wait and Notify
+
+### The problem
+
+A consumer finds the queue empty and must wait for a producer to add an item.
+
+Busy waiting burns a full core.
+```
+while (empty) {}
+```
+
+Polling with Thread.sleep uses no CPU but may react late and may wake up for nothing.
+wait() / notify() lets the thread wait with no CPU and no polling, and be signalled exactly when something changes.
+
+### Thread.sleep vs wait()
+
+sleep(ms): waits for time to pass, state TIMED_WAITING. No lock queue involved. It keeps any locks it holds. It can be interrupted.
+wait(): waits for a signal from another thread, state WAITING. It releases the lock.
+TIMED_WAITING only means “waiting with an alarm”. The stack trace in a thread dump shows what it is really waiting for.
+
+### API (methods of every object)
+
+wait(): release the lock, wait for a signal.
+
+notify(): wake one thread from that object’s wait set.
+
+notifyAll(): wake all threads in the wait set.
+
+These methods must be called only while holding that object’s synchronized lock, otherwise IllegalMonitorStateException.
+
+### What wait() does
+
+Releases the lock on the object (otherwise the producer could never enter).
+Puts the thread in the object’s wait set (WAITING).
+Blocks inside wait() for as long as it takes. When notified, the thread must re-acquire the lock before wait() returns, because the code after it is still inside the synchronized block.
+
+Two queues per object
+
+Entry queue: threads that want to enter synchronized but can’t. State BLOCKED.
+Wait set: threads that entered and then called wait(). State WAITING.
+notify() looks only at the wait set. It moves one thread from the wait set to the back of the entry queue.
+Being notified means “you are now in line for the lock”, not “you go next”.
+On each lock release, one thread is woken from the entry queue (which one is unspecified for synchronized).
+If nobody is in the wait set when notify() is called, the signal is lost. It is not remembered.
+
+### Why while, not if
+
+Consumer:
+```
+synchronized (queue) {
+    while (queue.isEmpty()) {   // while, not if
+        queue.wait();           // releases lock, waits, re-acquires on wake
+    }
+    item = queue.remove();
+}
+```
+Producer:
+```
+synchronized (queue) {
+    queue.add(item);
+    queue.notify();             // wake one waiting thread
+}
+```
+
+Another consumer may take the item between the notify and this thread getting the lock back. The queue is empty again.
+Being woken means “go and look”, not “your condition is now true”.
+while re-checks the condition after every wake-up. if would call remove() on an empty queue.
+It also protects against spurious wakeups (a wake-up with no notify at all).
