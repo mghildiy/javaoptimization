@@ -1,11 +1,19 @@
-# HashMap Summary
+# Language fundamentals
 
-## Structure
+string pool, autoboxing, pass-by-value, initialization order, inner/anonymous classes, generics and type erasure, exceptions, interfaces, enums, annotations, reflection, 
+classloaders
+
+
+# Collections and data structures
+
+## HashMap
+
+### Structure
 
 An array of slots (buckets). Each bucket holds a linked list, or a tree if it gets long.
 Index = hash & (n - 1), where n is the table size.
 
-## Why the table size is a power of two
+### Why the table size is a power of two
 
 It makes n - 1 all ones in binary, so every slot can be chosen. Otherwise some slots could never be used.
 On resize (doubling), each entry either stays in its slot or moves by exactly the old size.
@@ -16,14 +24,14 @@ Spread (h ^ (h >>> 16))
 Only the low bits of the hash pick the slot, so hashes that differ only in the high bits would all collide.
 The spread mixes high bits into low bits, which is cheap insurance.
 
-## Resizing
+### Resizing
 
 Triggered when total entries exceed capacity * 0.75. It counts all entries, not occupied slots.
 It copies every entry, so the one put that triggers it is slow.
 To store 1,000 entries without resizing, you need capacity above 1000 / 0.75, which becomes 2048.
 Too big a capacity wastes memory and makes iteration slow.
 
-## Long buckets (a separate trigger)
+### Long buckets (a separate trigger)
 
 When one bucket reaches 8 entries:
 Table under 64 slots: resize, because it’s probably just crowded.
@@ -33,13 +41,13 @@ It goes back to a list at 6 or fewer entries.
 Some buckets can be lists while others are trees.
 Neither resizing nor treeifying is a full fix. A good hashCode is the real fix.
 
-## Mutable keys
+### Mutable keys
 
 Each stored entry keeps its old hash. If you change a key after inserting, get and remove both miss.
 The entry is still in the map and shows up in iteration, but nothing can remove it normally. That is a memory leak.
 Keys should be immutable.
 
-## Thread safety
+### Thread safety
 
 Plain HashMap is not safe. Problems: lost updates, wrong size, entries lost during resize, stale reads.
 Java 7 could loop forever during a concurrent resize. Java 8 fixed the hang, but data can still be lost.
@@ -47,32 +55,32 @@ Java 7 could loop forever during a concurrent resize. Java 8 fixed the hang, but
 Hashtable locks the whole map, so threads wait even for different keys.
 You worked out the fix: lock per bucket. That leads to ConcurrentHashMap.
 
-# ConcurrentHashMap Summary
+## ConcurrentHashMap
 
-## Why it exists
+### Why it exists
 
 HashMap: no locks, not thread-safe, fast.
 Hashtable and Collections.synchronizedMap: one lock for the whole map, so threads wait even for different keys.
 ConcurrentHashMap: thread-safe and much more parallel.
 
-## How writes work (Java 8+)
+### How writes work (Java 8+)
 
 Empty bucket: the first node is placed using CAS (compare-and-set, one atomic CPU instruction). The loser of a race retries and sees a non-empty bucket.
 Non-empty bucket: synchronized on the head node of that bucket only. Threads wait only if they hit the same bucket.
 All writers (put, remove, compute, merge, resize) use the same lock, so no one can modify a bucket behind your back.
 Java 7 used fixed groups of buckets (segments), one lock per segment.
 
-## How reads work
+### How reads work
 
 get takes no lock. Table slots and node val/next fields are volatile.
 A writer builds the node fully, then links it in. A reader sees either the old or the new state, never a half-built node.
 A get may miss a put that is still in progress. That is correct behavior.
 
-## Volatile
+### Volatile
 
 It does not mean “bypass CPU cache”. It prevents reordering and creates happens-before: if you see the write, you see everything before it.
 
-## Single calls are safe, sequences are not
+### Single calls are safe, sequences are not
 
 containsKey then put: two threads can both see “absent”, and the second overwrites the first.
 get then put(+1): lost update.
@@ -80,42 +88,46 @@ Use atomic methods: putIfAbsent, computeIfAbsent, merge, compute.
 putIfAbsent: you build the value first (eager). computeIfAbsent: the function runs only if absent (lazy), under the bucket lock.
 Keep the function short, and never touch the same map inside it.
 
-## Counters
+### Counters
 
 AtomicLong: CAS on one location. Exact value, but many CAS retries under heavy contention.
 LongAdder: base value plus cells, threads spread across cells under contention. Fast for metrics, but sum() is not exact during updates.
 Choice depends on use: exact decision (limits, stock) means AtomicLong; statistics means LongAdder.
 
-## No nulls
+### No nulls
 
 get returning null must mean “absent”. With nulls allowed, you can’t tell absent from “present with null”, because containsKey then get isn’t safe when other threads change the map between calls.
 HashMap can allow nulls because single-thread use makes the check reliable.
 
-## Iteration and size
+### Iteration and size
 
 Iterators are weakly consistent: never throw CME, may or may not show changes made after they started. Removing during iteration is safe.
 size() uses a base counter plus cells (like LongAdder), so it is approximate under updates. Prefer mappingCount() for huge maps.
 Don’t use size() for hard limits. Use a Semaphore or an atomic counter.
 
-## ConcurrentHashMap vs synchronizedMap
+### ConcurrentHashMap vs synchronizedMap
 
 synchronizedMap: one lock, iteration needs manual locking, compound operations unsafe.
 ConcurrentHashMap: lock per bucket, lock-free reads, safe iteration, atomic compound methods. Better for read-heavy, many-thread use.
+
+TODO:
+ArrayList vs LinkedList, LinkedHashMap as LRU, TreeMap, PriorityQueue, ArrayDeque, CopyOnWriteArrayList, fail-fast vs weakly consistent iterators (partly covered), 
+immutable collections, sequenced collections
 
 ## Java Memory Model (volatile, happens-before)
 ## Thread pools and ExecutorService
 ## synchronized vs ReentrantLock
 
-# Multithreading
+## Concurrency and Multithreading
 
-## Why multithreading
+### Why multithreading
 
 CPU-bound work: split across cores, so things truly run in parallel.
 I/O-bound work: while one thread waits, another uses the CPU.
 Thread count: CPU-bound is about the number of cores. I/O-bound is cores × (1 + wait/compute), capped by what you wait on (e.g. DB connection pool size).
 Costs: complexity, memory per thread (about 1 MB stack), context switching.
 
-## Pitfalls
+### Pitfalls
 
 Race condition: the result depends on thread timing. It has two separate causes:
 - Atomicity: a multi-step operation gets interleaved (count++). Fix: synchronized or atomics.
@@ -129,7 +141,7 @@ Hot locks: many threads queue on one lock. Fixes: shorter critical sections, spl
 Starvation: a thread rarely or never gets what it needs, like due to unfair lock assign,ment or unfair OS scheduling.
 Livelock: threads stay active but make no progress.
 
-## Thread states
+### Thread states
 
 NEW: object created, start() not called.
 RUNNABLE: stsrt() called, waiting in the OS queue for a core, or running on a core.
@@ -139,7 +151,7 @@ TERMINATED: finished.
 BLOCKED, WAITING and TIMED_WAITING use no CPU. They only hold memory.
 Many RUNNABLE threads with high CPU means more work than cores. The queued ones use no CPU.
 
-## How a lock works
+### How a lock works
 
 A lock holds a state: free, or owned by thread X.
 Acquire: the thread does an atomic CAS on that state. Release: it resets the state to free.
@@ -147,7 +159,7 @@ A thread that fails to acquire joins the lock’s queue and waits.
 On release, one waiter is signalled. The signal means “you may try now”, not “you own it”.
 The woken thread must first get a core from the OS scheduler, then tries the lock.
 
-## synchronized vs ReentrantLock
+### synchronized vs ReentrantLock
 
 Both protect a critical section and are reentrant (the same thread can re-acquire; ReentrantLock keeps a count).
 synchronized: automatic release, no timeout, not interruptible while waiting, no fairness guarantee.
@@ -199,20 +211,20 @@ try {
 Timeout is decided in advance (“wait at most 2 s”). Interruptible is decided later by someone else (e.g. shutdown).
 Rule of thumb: use synchronized by default, and ReentrantLock only when you need those extras.
 
-## Fair vs unfair reentrant lock
+### Fair vs unfair reentrant lock
 
 Unfair (default): a new arrival can take the free lock before the woken waiter gets a core. The lock never sits idle, 
 so throughput is higher, but a waiter can lose repeatedly.
 Fair: new arrivals queue behind. No starvation, but the lock sits idle during each wake-up gap, so throughput is lower.
 Don’t make locks fair by default. Use fair only when starvation is a real, observed problem.
 
-## Synchronized, Volatile, Atomics
+### Synchronized, Volatile, Atomics
 
-### Synchronized gives both atomicity and visibility. Visibility works only between threads using the same lock object.
+#### Synchronized gives both atomicity and visibility. Visibility works only between threads using the same lock object.
 Volatile gives visibility only. No lock, no waiting, so it is cheap.
 Volatile is safe only when each operation is a single read or a single write (a stop flag). It is not safe for count++ or if (x > max) max = x, because both are read-then-write.
 
-### Locking rules
+#### Locking rules
 
 Every shared variable must be guarded by one specific lock, and every access (read and write) must use it.
 Different lock objects mean no protection. Common mistakes: synchronized (this) with a shared static field, 
@@ -221,29 +233,29 @@ A non-synchronized read of a variable written under a lock is a visibility bug, 
 Fixes: synchronize the getter too, or make the variable volatile (fine when the only unsynchronized access is a single read).
 Volatile alone fails if the writer does balance += amount (read, add, write), so lost updates are possible.
 
-### Hardware view
+#### Hardware view
 
 Each core has its own cache. The cache coherence protocol (MESI) keeps copies in agreement: before a write, other cores’ copies are invalidated.
 volatile is not “skip the cache”. It stops the JIT from keeping the value in a register, and it inserts memory barriers to stop reordering.
 There is no shared clock between cores. The guarantee is on the agreed order of operations on that variable: a read ordered after the write sees it. If two operations are too close to tell, either outcome is legal, and the program must be correct with both.
 
-### Atomics and CAS
+#### Atomics and CAS
 
 CompareAndSet(expected, new): set only if the value is still expected, as one atomic CPU instruction (LOCK CMPXCHG on x86).
 addAndGet, incrementAndGet, updateAndGet, accumulateAndGet already contain the retry loop. You write your own loop only for logic they can’t express, and the calculation inside must have no side effects, since it re-runs on failure.
 A failed CAS means the thread retries: it stays RUNNABLE and uses CPU (spinning). No lock, no queue, no deadlock, and a paused thread blocks nobody.
 Under heavy contention many retries waste CPU. That is the AtomicLong vs LongAdder point.
 
-### When to use which
+#### When to use which
 
 Atomics: one variable, small operation, low to moderate contention.
 Locks: several variables that must change together, long operations or I/O, heavy contention.
 Two AtomicLongs are each atomic, but a transfer using both is not atomic as a whole. Another thread can see the in-between state.
 Use a lock covering both.
 
-## Wait and Notify
+### Wait and Notify
 
-### The problem
+#### The problem
 
 A consumer finds the queue empty and must wait for a producer to add an item.
 
@@ -255,13 +267,13 @@ while (empty) {}
 Polling with Thread.sleep uses no CPU but may react late and may wake up for nothing.
 wait() / notify() lets the thread wait with no CPU and no polling, and be signalled exactly when something changes.
 
-### Thread.sleep vs wait()
+#### Thread.sleep vs wait()
 
 sleep(ms): waits for time to pass, state TIMED_WAITING. No lock queue involved. It keeps any locks it holds. It can be interrupted.
 wait(): waits for a signal from another thread, state WAITING. It releases the lock.
 TIMED_WAITING only means “waiting with an alarm”. The stack trace in a thread dump shows what it is really waiting for.
 
-### API (methods of every object)
+#### API (methods of every object)
 
 wait(): release the lock, wait for a signal.
 
@@ -271,7 +283,7 @@ notifyAll(): wake all threads in the wait set.
 
 These methods must be called only while holding that object’s synchronized lock, otherwise IllegalMonitorStateException.
 
-### What wait() does
+#### What wait() does
 
 Releases the lock on the object (otherwise the producer could never enter).
 Puts the thread in the object’s wait set (WAITING).
@@ -286,7 +298,7 @@ Being notified means “you are now in line for the lock”, not “you go next�
 On each lock release, one thread is woken from the entry queue (which one is unspecified for synchronized).
 If nobody is in the wait set when notify() is called, the signal is lost. It is not remembered.
 
-### Why while, not if
+#### Why while, not if
 
 Consumer:
 ```
@@ -310,28 +322,28 @@ Being woken means “go and look”, not “your condition is now true”.
 while re-checks the condition after every wake-up. if would call remove() on an empty queue.
 It also protects against spurious wakeups (a wake-up with no notify at all).
 
-### Prefer notifyAll over notify
+#### Prefer notifyAll over notify
 
 The wait set can contain different kinds of threads, for example consumers waiting for “queue not empty” and producers waiting for “queue not full”. 
 notify() wakes just one, and it might be the wrong kind. That thread re-checks its condition, finds it false, and waits again, while the signal is used up and the right thread keeps sleeping. 
 Everyone may end up waiting forever. notifyAll() wakes all of them, each re-checks its own condition in the while loop, and the right ones proceed.
 Prefer notifyAll() unless you are sure that all waiting threads are interchangeable and any one of them can use the signal.The cost is some wasted wake-ups.
 
-## Interrupts
+### Interrupts
 
-### Idea
+#### Idea
 
 Sometimes we may want a thread to stop doing what it is doing. Java has no safe way to force-stop a thread (stop() is deprecated). 
 The clean way is a polite request: thread.interrupt().
 Interrupt is cooperative. It works only if the target thread checks the flag and acts on it.
 
-### What interrupt() does
+#### What interrupt() does
 
 Always sets the thread’s interrupted flag.
 If the thread is waiting in an interruptible call, it also wakes it (unpark).
 If the thread is running normally, nothing else happens. The flag stays set.
 
-### Interruptible methods
+#### Interruptible methods
 
 sleep, wait, join, BlockingQueue.take/put, lockInterruptibly, tryLock(timeout), awaitTermination.
 Any method declaring throws InterruptedException checks the flag itself:
@@ -340,7 +352,7 @@ Any method declaring throws InterruptedException checks the flag itself:
 - It clears the flag and throws InterruptedException.
 - Plain synchronized and lock() ignore interrupts.
 
-### Handling InterruptedException
+#### Handling InterruptedException
 
 - Propagate (throws InterruptedException). Best.
 - Catch, restore the flag, stop the work:
@@ -355,14 +367,14 @@ Release resources in finally, then 1 or 2.
 - Never swallow it (empty catch, or only logging). The thread then refuses to stop.
 - If you own the thread’s loop, catching and exiting the loop is fine.
 
-### When the flag has no effect
+#### When the flag has no effect
 
 - A swallowed exception (flag cleared, nobody told).
 - A CPU loop that never checks isInterrupted().
 
-## Thread Pools and ExecutorService
+### Thread Pools and ExecutorService
 
-### Why pools exist
+#### Why pools exist
 
 Thread per request causes:
 - Memory issues as creating a thread needs memory(~ 1 MB per thread)
@@ -372,7 +384,7 @@ Thread per request causes:
 
 A pool creates a limited set of threads once and reuses them. Tasks wait in a queue until a worker is free.
 
-### How a pool works
+#### How a pool works
 
 - Each worker runs a loop: take a task from the queue, run it, come back for the next.
 - The queue is a BlockingQueue. Its take() makes a worker wait (no CPU) when the queue is empty, and wakes one when a task arrives.
@@ -380,7 +392,7 @@ A pool creates a limited set of threads once and reuses them. Tasks wait in a qu
 - Workers are created lazily, as tasks are submitted.
 - The producer is whoever calls submit(): your code, or a framework. Tomcat’s request pool works this way, with each HTTP request submitted as a task.
 
-### The types, and who is what
+#### The types, and who is what
 
 - ExecutorService: the interface (submit(), shutdown(), ...).
 - ThreadPoolExecutor: the main JDK class implementing it. It holds the workers and the queue.
@@ -389,7 +401,7 @@ A pool creates a limited set of threads once and reuses them. Tasks wait in a qu
 - Not ThreadPoolExecutor: ForkJoinPool (parallel streams, CompletableFuture default) and the virtual-thread executor (newVirtualThreadPerTaskExecutor, an internal JDK class with no queue or core size).
 - BlockingQueue can also be used directly for your own producer-consumer design.
 
-### Settings of ThreadPoolExecutor
+#### Settings of ThreadPoolExecutor
 
 - Core size, maximum size, queue, keep-alive time, rejection policy.
 - Order of decisions on submit():
@@ -399,14 +411,14 @@ A pool creates a limited set of threads once and reuses them. Tasks wait in a qu
   - Maximum reached and queue full: reject.
 - The extra workers (above core) are removed after the keep-alive time if they sit idle.
 
-### Rejection policies
+#### Rejection policies
 
 - AbortPolicy (default): throws RejectedExecutionException.
 - CallerRunsPolicy: the submitting thread runs the task itself, inside submit(). Nothing is lost, and the caller slows down, which acts as back-pressure.
 - DiscardPolicy: silently drops the task.
 - DiscardOldestPolicy: drops the oldest queued task and retries.
 
-### The Executors shortcuts and their risks
+#### The Executors shortcuts and their risks
 
 - newFixedThreadPool(n): unbounded queue, so memory can run out.
 - newCachedThreadPool(): unbounded thread count, so it can recreate the original problem.
@@ -415,3 +427,36 @@ A pool creates a limited set of threads once and reuses them. Tasks wait in a qu
 
 Production services usually build a ThreadPoolExecutor with the constructor (bounded queue, chosen rejection policy). No subclassing is needed, only different arguments.
 The shortcuts are fine for scripts, tests and limited, known loads.
+
+## JVM internals and performance
+memory areas, class loading, bytecode and JIT, garbage collectors (G1, ZGC), container settings, diagnostics (JFR, jcmd, heap dumps, thread dumps), object layout
+
+## Java I/O and networking: NIO, serialization, HttpClient
+
+## Design and craftsmanship: SOLID, design patterns, API design, backward compatibility, testing
+
+## Framework layer: Spring (IoC, proxies, @Transactional), Spring Boot, Hibernate/JPA, JDBC and transactions, Maven/Gradle
+
+## Modern Java
+### Records, sealed types, pattern matching
+### Virtual threads
+### Structured concurrency and scoped values
+### Stream Gatherers
+### Foreign Function & Memory API
+### Class-File API
+### AOT cache, CDS, Leyden
+### Generational ZGC and compact object headers
+### Smaller features: flexible constructors, unnamed variables, module imports, simple main
+### Also in the original plan
+### Architecture and system design (from the first plan): microservices vs monolith, DDD, event-driven design, resilience, data and caching, observability, and so on
+### Behavioral and leadership stories
+### Coding practice
+
+## Additional topics
+
+### Architecture and system design (from the first plan)
+### microservices vs monolith, DDD
+### event-driven design
+### resilience
+### data and caching
+### observability

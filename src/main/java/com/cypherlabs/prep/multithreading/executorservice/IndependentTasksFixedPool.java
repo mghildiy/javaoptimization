@@ -1,4 +1,4 @@
-package com.cypherlabs.prep;
+package com.cypherlabs.prep.multithreading.executorservice;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -18,7 +18,7 @@ public class IndependentTasksFixedPool {
             }
 
             // marks state of executor service as SHUT, no new tasks accepted, running tasks continue to run, tasks in queue stay
-            // so that workers waiting on new tasks(take() on queue) check if status is SHUT and no task in queue, and exit
+            // workers waiting for new tasks(take() on queue) check if status is SHUT and no task in queue, and exit
             pool.shutdown();
 
             // block for 10 seconds so that all tasks are completed, else they complete after exit of main(worker threads in executor service are non-daemon threads,
