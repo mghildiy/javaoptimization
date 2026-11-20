@@ -4,7 +4,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-public class ExecutorServiceDemo1 {
+// Many independent tasks on a fixed pool (done)
+public class IndependentTasksFixedPool {
 
     public static void main(String[] args) {
         try(ExecutorService pool = Executors.newFixedThreadPool(3);) {
