@@ -317,6 +317,49 @@ notify() wakes just one, and it might be the wrong kind. That thread re-checks i
 Everyone may end up waiting forever. notifyAll() wakes all of them, each re-checks its own condition in the while loop, and the right ones proceed.
 Prefer notifyAll() unless you are sure that all waiting threads are interchangeable and any one of them can use the signal.The cost is some wasted wake-ups.
 
+## Interrupts
+
+### Idea
+
+Sometimes we may want a thread to stop doing what it is doing. Java has no safe way to force-stop a thread (stop() is deprecated). 
+The clean way is a polite request: thread.interrupt().
+Interrupt is cooperative. It works only if the target thread checks the flag and acts on it.
+
+### What interrupt() does
+
+Always sets the thread’s interrupted flag.
+If the thread is waiting in an interruptible call, it also wakes it (unpark).
+If the thread is running normally, nothing else happens. The flag stays set.
+
+### Interruptible methods
+
+sleep, wait, join, BlockingQueue.take/put, lockInterruptibly, tryLock(timeout), awaitTermination.
+Any method declaring throws InterruptedException checks the flag itself:
+- On entry: if already set, it throws immediately.
+- After waking: it checks again, to tell “interrupted” from “item arrived”.
+- It clears the flag and throws InterruptedException.
+- Plain synchronized and lock() ignore interrupts.
+
+### Handling InterruptedException
+
+- Propagate (throws InterruptedException). Best.
+- Catch, restore the flag, stop the work:
+```
+catch(InterruptedException ie) {
+    Thread.currentThread().interrupt(); 
+    return; 
+}
+```
+Reset the flag os that code upstream can get to know that this thread is interrupted,and appropriate action needs to be taken
+Release resources in finally, then 1 or 2.
+- Never swallow it (empty catch, or only logging). The thread then refuses to stop.
+- If you own the thread’s loop, catching and exiting the loop is fine.
+
+### When the flag has no effect
+
+- A swallowed exception (flag cleared, nobody told).
+- A CPU loop that never checks isInterrupted().
+
 ## Thread Pools and ExecutorService
 
 ### Why pools exist
