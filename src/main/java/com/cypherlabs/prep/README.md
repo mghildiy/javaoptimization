@@ -309,3 +309,66 @@ Another consumer may take the item between the notify and this thread getting th
 Being woken means “go and look”, not “your condition is now true”.
 while re-checks the condition after every wake-up. if would call remove() on an empty queue.
 It also protects against spurious wakeups (a wake-up with no notify at all).
+
+### Prefer notifyAll over notify
+
+The wait set can contain different kinds of threads, for example consumers waiting for “queue not empty” and producers waiting for “queue not full”. 
+notify() wakes just one, and it might be the wrong kind. That thread re-checks its condition, finds it false, and waits again, while the signal is used up and the right thread keeps sleeping. 
+Everyone may end up waiting forever. notifyAll() wakes all of them, each re-checks its own condition in the while loop, and the right ones proceed.
+Prefer notifyAll() unless you are sure that all waiting threads are interchangeable and any one of them can use the signal.The cost is some wasted wake-ups.
+
+## Thread Pools and ExecutorService
+
+### Why pools exist
+
+Thread per request causes:
+- Memory issues as creating a thread needs memory(~ 1 MB per thread)
+- Too many threads means lots of context switching for CPU instead of doing real work
+- Creating a thread itself takes time, and if real task is tiny then creating a thread for task takes more time than task itself, making thread creation major factor in overall latency
+- No upper limit on number of threads when a spike happens
+
+A pool creates a limited set of threads once and reuses them. Tasks wait in a queue until a worker is free.
+
+### How a pool works
+
+- Each worker runs a loop: take a task from the queue, run it, come back for the next.
+- The queue is a BlockingQueue. Its take() makes a worker wait (no CPU) when the queue is empty, and wakes one when a task arrives.
+- BlockingQueue is built on ReentrantLock and Condition, the same idea as wait/notify.
+- Workers are created lazily, as tasks are submitted.
+- The producer is whoever calls submit(): your code, or a framework. Tomcat’s request pool works this way, with each HTTP request submitted as a task.
+
+### The types, and who is what
+
+- ExecutorService: the interface (submit(), shutdown(), ...).
+- ThreadPoolExecutor: the main JDK class implementing it. It holds the workers and the queue.
+- Executors.newFixedThreadPool(n) and similar static factory methods, not classes. They only build a ThreadPoolExecutor with preset settings.
+- ScheduledThreadPoolExecutor is a subclass, used for delayed or repeated tasks.
+- Not ThreadPoolExecutor: ForkJoinPool (parallel streams, CompletableFuture default) and the virtual-thread executor (newVirtualThreadPerTaskExecutor, an internal JDK class with no queue or core size).
+- BlockingQueue can also be used directly for your own producer-consumer design.
+
+### Settings of ThreadPoolExecutor
+
+- Core size, maximum size, queue, keep-alive time, rejection policy.
+- Order of decisions on submit():
+  - Fewer workers than core size: start a new worker.
+  - Otherwise, put the task in the queue.
+  - Queue full: start extra workers, up to maximum size.
+  - Maximum reached and queue full: reject.
+- The extra workers (above core) are removed after the keep-alive time if they sit idle.
+
+### Rejection policies
+
+- AbortPolicy (default): throws RejectedExecutionException.
+- CallerRunsPolicy: the submitting thread runs the task itself, inside submit(). Nothing is lost, and the caller slows down, which acts as back-pressure.
+- DiscardPolicy: silently drops the task.
+- DiscardOldestPolicy: drops the oldest queued task and retries.
+
+### The Executors shortcuts and their risks
+
+- newFixedThreadPool(n): unbounded queue, so memory can run out.
+- newCachedThreadPool(): unbounded thread count, so it can recreate the original problem.
+- newSingleThreadExecutor(): one worker, tasks run in order.
+- newScheduledThreadPool(n): delayed or repeated tasks.
+
+Production services usually build a ThreadPoolExecutor with the constructor (bounded queue, chosen rejection policy). No subclassing is needed, only different arguments.
+The shortcuts are fine for scripts, tests and limited, known loads.
