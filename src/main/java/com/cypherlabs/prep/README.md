@@ -428,6 +428,70 @@ A pool creates a limited set of threads once and reuses them. Tasks wait in a qu
 Production services usually build a ThreadPoolExecutor with the constructor (bounded queue, chosen rejection policy). No subclassing is needed, only different arguments.
 The shortcuts are fine for scripts, tests and limited, known loads.
 
+### Sizing thread pool
+
+#### CPU-bound tasks (calculation, parsing, compression):
+
+Pool size is about cores (or cores + 1).
+More threads only add context switching.
+
+#### I/O-bound tasks (database, HTTP calls, disk):
+
+Pool size is about cores × (1 + wait time / compute time).
+Example: 8 cores, each task computes 10 ms and waits 90 ms. Wait/compute = 9, so 8 × 10 = 80 threads.
+
+#### Get the cores in code:
+
+```
+int cores = Runtime.getRuntime().availableProcessors();
+ExecutorService cpuPool = Executors.newFixedThreadPool(cores);
+```
+
+In containers (Docker/Kubernetes), availableProcessors() respects the CPU limit in modern JDKs. So a pod limited to 2 CPUs on a 64-core machine reports 2.
+
+#### Factors that cap the useful size
+
+- The resource program waits on. If database pool has 20 connections, 80 threads just queue for those 20. The size is then about 20.
+- Memory. Each thread reserves about 1 MB of stack.
+- The downstream service's capacity. 80 threads calling a service that handles 30 concurrent requests will only overload it. 
+
+Empirical rule is to have minimum number of threads as decided by these constraints.
+
+#### General points
+
+- Use separate pools for different kinds of work
+- Do not put CPU-bound and I/O-bound tasks in one pool. Slow I/O tasks can occupy all workers, and quick CPU tasks then wait behind them (a form of starvation). A common setup is:
+  - one small pool for CPU work (size ≈ cores)
+  - one larger pool for blocking calls
+  - a separate pool for each downstream service, so one slow service can't take all threads. This is called a bulkhead mechanism. 
+  
+Don't trust the formula blindly. The formula gives a starting point. Start with an estimate based on above considerations, then load test,
+watch throughput, latency (p99), CPU and queue size, and adjust.
+
+#### Signs of a wrong size:
+
+Too small: CPU is low, the queue keeps growing, latency rises.
+Too large: CPU is high with lots of context switching, memory is high, and downstream services are overloaded.
+
+#### Name youe threads
+
+Pool threads are named pool-1-thread-1 by default, which is useless in a thread dump. Give them meaningful names with a ThreadFactory:
+
+```
+AtomicInteger n = new AtomicInteger();
+ExecutorService pool = Executors.newFixedThreadPool(8, r -> {
+Thread t = new Thread(r, "payment-worker-" + n.incrementAndGet());
+return t;
+});
+```
+
+#### Virtual threads change this
+
+For I/O-bound work, virtual threads remove the need to size the pool at all, because you can create one per task. The limit moves to the downstream resource (for example, DB connections).
+With virtual threads based executor service, limit the number of tasks based on limitations of other parts. Something like semaphore cna be used for this.
+
+------------------------------------------------------------------------------------------
+
 ## JVM internals and performance
 memory areas, class loading, bytecode and JIT, garbage collectors (G1, ZGC), container settings, diagnostics (JFR, jcmd, heap dumps, thread dumps), object layout
 
